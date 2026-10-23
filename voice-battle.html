@@ -1,0 +1,919 @@
+<title>Voice Battle</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Almendra+SC&family=Alegreya+Sans:wght@400;500;700&family=Share+Tech+Mono&display=swap">
+<style>
+/* Layout: wide dungeon stage on top (enemy centered and huge, party lined up along the bottom edge),
+   then a command window bottom-left and a party status window bottom-right. Dark single-look design by choice. */
+:root {
+  --bg: #0f0c0f;
+  --panel: #1a1418;
+  --panel-hi: #261d22;
+  --line: #75605a;
+  --line-soft: #3b2f31;
+  --text: #ecdfcc;
+  --muted: #a09084;
+  --ember: #f08a3c;
+  --atb: #79c0de;
+  --body: #cf5143;
+  --mind: #6a8be0;
+  --good: #86b873;
+  --font-display: 'Almendra SC', Georgia, serif;
+  --font-body: 'Alegreya Sans', 'Segoe UI', system-ui, sans-serif;
+  --font-num: 'Share Tech Mono', ui-monospace, Menlo, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.35;
+  padding-block: 14px 28px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.game { max-width: 940px; margin: 0 auto; display: flex; flex-direction: column; gap: 10px; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--ember); outline-offset: 2px; }
+
+.top { display: flex; align-items: baseline; justify-content: space-between; gap: 6px 16px; flex-wrap: wrap; }
+.top h1 { margin: 0; font: 400 1.6rem/1 var(--font-display); letter-spacing: .04em; text-wrap: balance; }
+.top p { margin: 0; color: var(--muted); font-size: .95rem; min-width: 0; }
+.top q { color: var(--text); quotes: "\201C" "\201D"; }
+
+.win {
+  background: linear-gradient(180deg, var(--panel-hi), var(--panel));
+  border: 2px solid var(--line);
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 2px #0c090b, inset 0 0 0 3px var(--line-soft);
+  padding: 12px;
+  min-width: 0;
+}
+
+/* stage */
+.stage-wrap { display: flex; justify-content: center; }
+.stage {
+  position: relative;
+  width: min(100%, calc(58vh * 400 / 240));
+  min-width: 280px;
+  aspect-ratio: 400 / 240;
+  border: 2px solid var(--line);
+  border-radius: 6px;
+  box-shadow: 0 0 0 1px #0c090b, 0 0 0 3px var(--line-soft);
+  overflow: hidden;
+  background: #120e10;
+}
+.stage canvas { display: block; width: 100%; height: 100%; image-rendering: pixelated; }
+.foe { position: absolute; top: 8px; left: 50%; transform: translateX(-50%); width: min(62%, 340px); text-align: center; pointer-events: none; }
+.foe-name { font: 400 .95rem/1 var(--font-display); letter-spacing: .1em; text-shadow: 0 1px 3px #000; }
+.foe-hp { margin-top: 4px; height: 7px; background: #1b0f10; border: 1px solid var(--line); border-radius: 2px; overflow: hidden; }
+.foe-hp i { display: block; height: 100%; width: 100%; background: linear-gradient(90deg, #8d2b24, var(--body)); transition: width .25s; }
+.banner { margin-top: 6px; opacity: 0; transition: opacity .15s; font: 700 .85rem/1.1 var(--font-body); letter-spacing: .08em; text-transform: uppercase; color: var(--ember); text-shadow: 0 1px 3px #000; }
+.banner.on { opacity: 1; }
+.banner .wind { margin: 3px auto 0; width: 60%; height: 4px; background: #1b0f10; border-radius: 2px; overflow: hidden; }
+.banner .wind i { display: block; height: 100%; width: 0; background: var(--ember); }
+.over[hidden] { display: none; }
+.over { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 12px; background: rgba(8, 5, 7, .78); text-align: center; }
+.over h2 { margin: 0; font: 400 clamp(1.6rem, 5vw, 2.6rem)/1 var(--font-display); letter-spacing: .06em; }
+.over p { margin: 0; color: var(--muted); }
+.btn { border: 2px solid var(--line); background: var(--panel-hi); border-radius: 4px; padding: 7px 14px; cursor: pointer; font-weight: 700; letter-spacing: .03em; }
+.btn:hover { border-color: var(--ember); }
+.btn.primary { background: #5a2d17; border-color: var(--ember); }
+
+/* voice strip */
+.strip { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; align-items: center; }
+.strip .mic { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.mic-btn { display: inline-flex; align-items: center; gap: 8px; }
+.dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); }
+.mic-btn[aria-pressed="true"] .dot { background: var(--body); box-shadow: 0 0 0 0 rgba(207, 81, 67, .7); animation: ping 1.4s infinite; }
+@keyframes ping { to { box-shadow: 0 0 0 8px rgba(207, 81, 67, 0); } }
+.status { color: var(--muted); font-size: .9rem; min-width: 0; }
+.heard { min-width: 0; font-size: 1rem; display: flex; flex-wrap: wrap; gap: 2px 12px; }
+.heard .h { color: var(--muted); font-style: italic; }
+.heard .r { color: var(--text); font-weight: 500; }
+.heard .r.bad { color: #e49a7e; }
+.strip form { display: flex; gap: 8px; }
+.strip input[type=text] { flex: 1; min-width: 0; background: #120d10; color: var(--text); border: 1px solid var(--line-soft); border-radius: 4px; padding: 7px 10px; font: inherit; }
+.mode { display: inline-flex; align-items: center; gap: 6px; font-size: .9rem; color: var(--muted); cursor: pointer; }
+.mode input { accent-color: var(--ember); }
+
+/* windows */
+.windows { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 10px; align-items: stretch; }
+.cmd h3 { margin: 0 0 8px; font: 400 1.05rem/1 var(--font-display); letter-spacing: .08em; display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.cmd h3 span { font: 500 .8rem/1 var(--font-body); letter-spacing: .06em; color: var(--atb); text-transform: uppercase; }
+.cmd h3 span.wait { color: var(--muted); }
+.cmds { display: flex; flex-direction: column; gap: 4px; }
+.cmd-row { display: grid; grid-template-columns: 1fr auto; gap: 0 10px; text-align: left; background: transparent; border: 1px solid transparent; border-radius: 3px; padding: 5px 8px; cursor: pointer; }
+.cmd-row:hover { background: rgba(255, 255, 255, .05); }
+.cmd-row b { font-weight: 700; font-size: 1.05rem; }
+.cmd-row .cost { font: .85rem var(--font-num); color: var(--mind); align-self: center; }
+.cmd-row small { grid-column: 1 / -1; color: var(--muted); font-size: .85rem; }
+.cmd-row.no { opacity: .45; }
+.cmd-row.queued { border-color: var(--atb); background: rgba(121, 192, 222, .1); }
+
+.party { display: flex; flex-direction: column; gap: 8px; }
+.member { display: grid; grid-template-columns: 6.2rem minmax(0, 1fr) minmax(0, 1fr); gap: 4px 12px; align-items: center; text-align: left; background: transparent; border: 1px solid transparent; border-radius: 3px; padding: 6px 8px; cursor: pointer; }
+.member:hover { background: rgba(255, 255, 255, .04); }
+.member.sel { border-color: var(--line); background: rgba(255, 255, 255, .06); }
+.member .nm { font: 400 1.25rem/1.05 var(--font-display); letter-spacing: .04em; }
+.member .nm small { display: block; font: 500 .72rem/1.2 var(--font-body); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.member.down .nm { color: var(--muted); text-decoration: line-through; text-decoration-thickness: 1px; }
+.stat { display: grid; grid-template-columns: auto 1fr auto; gap: 6px; align-items: center; min-width: 0; }
+.stat label { font-size: .78rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.stat b { font: 400 1rem var(--font-num); min-width: 2.3ch; text-align: right; font-variant-numeric: tabular-nums; }
+.bar { display: block; height: 6px; background: #120d10; border: 1px solid var(--line-soft); border-radius: 2px; overflow: hidden; }
+.bar i { display: block; height: 100%; width: 100%; }
+.stat.body .bar i { background: var(--body); }
+.stat.mind .bar i { background: var(--mind); }
+.atb { grid-column: 1 / -1; position: relative; height: 8px; background: #120d10; border: 1px solid var(--line-soft); border-radius: 2px; overflow: hidden; }
+.atb i { display: block; height: 100%; width: 0; background: var(--atb); }
+.member.ready .atb { border-color: var(--ember); }
+.member.ready .atb i { background: var(--ember); animation: glow 0.9s ease-in-out infinite alternate; }
+@keyframes glow { to { filter: brightness(1.45); } }
+
+@media (max-width: 680px) {
+  .windows { grid-template-columns: minmax(0, 1fr); }
+  .member { grid-template-columns: 5rem minmax(0, 1fr); }
+  .member .stat.mind { grid-column: 2; }
+  .stage { aspect-ratio: 400 / 260; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mic-btn[aria-pressed="true"] .dot, .member.ready .atb i { animation: none; }
+}
+</style>
+
+<div class="game">
+  <header class="top">
+    <h1>Voice Battle</h1>
+    <p>Say a name, then a command: <q>Kevin, heal</q> or <q>Matthew, block</q>.</p>
+  </header>
+
+  <div class="stage-wrap">
+    <div class="stage" id="stage">
+      <canvas id="c" width="400" height="240" aria-label="Battle scene: the Kiln Warden stands in the middle of a brick tunnel, with Kevin, Matthew and Ian in front"></canvas>
+      <div class="foe">
+        <div class="foe-name">Kiln Warden</div>
+        <div class="foe-hp"><i id="foeHp"></i></div>
+        <div class="banner" id="banner"><span id="bannerText"></span><div class="wind"><i id="windBar"></i></div></div>
+      </div>
+      <div class="over" id="over" hidden>
+        <h2 id="overTitle"></h2>
+        <p id="overSub"></p>
+        <button class="btn primary" id="again" type="button">Fight again</button>
+      </div>
+    </div>
+  </div>
+
+  <section class="win strip" aria-label="Voice input">
+    <div class="mic">
+      <button class="btn mic-btn" id="mic" type="button" aria-pressed="false"><span class="dot"></span><span id="micLabel">Start listening</span></button>
+      <label class="mode"><input type="checkbox" id="wait" checked> Wait mode</label>
+      <span class="status" id="micStatus">Mic off. You can also type or tap commands.</span>
+    </div>
+    <div class="heard" aria-live="polite"><span class="h" id="heard">Nothing heard yet.</span><span class="r" id="result"></span></div>
+    <form id="typed" autocomplete="off">
+      <input type="text" id="typedCmd" placeholder="Type a command, such as Ian flurry" aria-label="Type a command">
+      <button class="btn" type="submit">Send</button>
+    </form>
+  </section>
+
+  <div class="windows">
+    <section class="win cmd" aria-label="Commands">
+      <h3><b id="cmdWho" style="font-weight:400">Kevin</b><span id="cmdState">Waiting</span></h3>
+      <div class="cmds" id="cmds"></div>
+    </section>
+    <section class="win party" id="party" aria-label="Party"></section>
+  </div>
+</div>
+<script>
+(() => {
+'use strict';
+const W = 400, H = 240;
+
+/* ---------- data ---------- */
+const SKILLS = {
+  attack: { label: 'Attack', cost: 0,  desc: 'A plain strike.' },
+  block:  { label: 'Block',  cost: 0,  desc: 'Take 60% less damage for 6 seconds.' },
+  heal:   { label: 'Heal',   cost: 12, desc: 'Restore Body to an ally. Add a name to pick who.' },
+  bolt:   { label: 'Bolt',   cost: 14, desc: 'Lightning for heavy damage.' },
+  revive: { label: 'Revive', cost: 25, desc: 'Raise a fallen ally.' },
+  bash:   { label: 'Bash',   cost: 10, desc: 'Heavy hit that sets the Warden back.' },
+  taunt:  { label: 'Taunt',  cost: 5,  desc: 'Draws the Warden’s next two slams.' },
+  flurry: { label: 'Flurry', cost: 8,  desc: 'Three fast cuts.' },
+  quick:  { label: 'Quick cut', cost: 0, desc: 'Light hit. Refunds half the gauge.' }
+};
+
+const DEFS = [
+  { id: 'kevin',   name: 'Kevin',   role: 'Mender', maxHp: 90,  maxMp: 80, spd: 1.05, atk: [8, 12],  x: 72,
+    skills: ['attack', 'block', 'heal', 'bolt', 'revive'] },
+  { id: 'matthew', name: 'Matthew', role: 'Knight', maxHp: 130, maxMp: 40, spd: 0.9,  atk: [16, 22], x: 200,
+    skills: ['attack', 'block', 'bash', 'taunt'] },
+  { id: 'ian',     name: 'Ian',     role: 'Rogue',  maxHp: 100, maxMp: 50, spd: 1.3,  atk: [12, 16], x: 328,
+    skills: ['attack', 'block', 'flurry', 'quick'] }
+];
+const DEF = id => DEFS.find(d => d.id === id);
+const GAUGE_SECONDS = 6;
+const rnd = (a, b) => Math.floor(a + Math.random() * (b - a + 1));
+
+/* ---------- voice command parser ---------- */
+const NAME_ALIASES = {
+  kevin:   ['kevin', 'kevan', 'kevyn', 'keven', 'kev', 'cavin', 'kelvin', 'kevins'],
+  matthew: ['matthew', 'mathew', 'matt', 'matthews', 'mathieu', 'mat', 'matthew’s'],
+  ian:     ['ian', 'iain', 'eon', 'ion', 'ean', 'yan', 'eyan', 'ayan']
+};
+const ACTION_ALIASES = {
+  attack: ['attack', 'attacks', 'attacked', 'hit', 'strike', 'slash', 'fight', 'swing', 'attach'],
+  block:  ['block', 'blocks', 'blocked', 'blog', 'guard', 'defend', 'shield', 'brace'],
+  heal:   ['heal', 'heals', 'healed', 'healing', 'heel', 'cure', 'mend', 'hill'],
+  bolt:   ['bolt', 'bolts', 'bold', 'fire', 'zap', 'lightning', 'thunder', 'shock'],
+  revive: ['revive', 'revives', 'revived', 'raise', 'resurrect', 'rez'],
+  bash:   ['bash', 'bashes', 'smash', 'bashed'],
+  taunt:  ['taunt', 'taunts', 'taunted', 'tont'],
+  flurry: ['flurry', 'flurries', 'flurrys', 'furry'],
+  quick:  ['quick', 'quickly', 'quik', 'fast']
+};
+const ALL_WORDS = ['everyone', 'everybody', 'all', 'team', 'party', 'together'];
+const PRIORITY = ['heal', 'revive', 'bolt', 'bash', 'taunt', 'flurry', 'quick', 'block', 'attack'];
+
+function norm(s) {
+  return String(s).toLowerCase().replace(/[’]/g, "'").replace(/'s\b/g, '')
+    .replace(/[^a-z0-9' ]/g, ' ').replace(/\bi an\b/g, 'ian').replace(/\s+/g, ' ').trim();
+}
+function lev(a, b) {
+  const m = a.length, n = b.length;
+  if (Math.abs(m - n) > 2) return 9;
+  let prev = Array.from({ length: n + 1 }, (_, j) => j);
+  for (let i = 1; i <= m; i++) {
+    const cur = [i];
+    for (let j = 1; j <= n; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    prev = cur;
+  }
+  return prev[n];
+}
+function matchToken(tok, table) {
+  for (const key in table) if (table[key].includes(tok)) return key;
+  if (tok.length >= 5) for (const key in table) for (const al of table[key]) if (al.length >= 5 && lev(tok, al) <= 1) return key;
+  return null;
+}
+const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+
+function parseCommand(text) {
+  const toks = norm(text).split(' ').filter(Boolean);
+  const names = [], actions = [];
+  let all = false;
+  for (const tok of toks) {
+    const n = matchToken(tok, NAME_ALIASES);
+    if (n) { names.push(n); continue; }
+    if (ALL_WORDS.includes(tok)) { all = true; continue; }
+    const a = matchToken(tok, ACTION_ALIASES);
+    if (a) actions.push(a);
+  }
+  if (!actions.length) {
+    return { ok: false, reason: names.length ? `${cap(names[0])}… what should they do?` : 'No command heard.' };
+  }
+  const action = PRIORITY.find(a => actions.includes(a));
+  if (all && action === 'block') return { ok: true, all: true, action };
+  const canDo = id => DEF(id).skills.includes(action);
+  const owners = DEFS.filter(d => d.skills.includes(action));
+  let actor = null, target = null;
+  if (names.length) {
+    actor = names[0];
+    if (!canDo(actor) && names[1] && canDo(names[1])) { actor = names[1]; target = names[0]; }
+    else target = names.find(n => n !== actor) || null;
+    if (!canDo(actor) && owners.length === 1 && (action === 'heal' || action === 'revive')) { target = actor; actor = owners[0].id; }
+  } else if (owners.length === 1) {
+    actor = owners[0].id;
+  }
+  if (!actor) return { ok: false, reason: `Say a name first, like “${DEFS[0].name}, ${SKILLS[action].label.toLowerCase()}”.` };
+  return { ok: true, actor, action, target };
+}
+
+/* ---------- battle state ---------- */
+let S;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+
+function newGame() {
+  S = {
+    t: 0, over: null, overT: 0, shake: 0, manual: false,
+    wait: document.getElementById('wait').checked,
+    selected: 'kevin',
+    heroes: DEFS.map(d => ({
+      ...d, hp: d.maxHp, mp: d.maxMp, gauge: 0.25 + Math.random() * 0.35, ready: false,
+      guardUntil: 0, queued: null, ko: false, anim: null, hitT: -9, readyT: 0
+    })),
+    enemy: { hp: 720, max: 720, gauge: 0.15, wind: null, hitT: -9, slamT: -9, taunt: { id: null, n: 0 }, enraged: false },
+    floaters: [], parts: [], timers: []
+  };
+  document.getElementById('over').hidden = true;
+}
+
+const heroById = id => S.heroes.find(h => h.id === id);
+const living = () => S.heroes.filter(h => !h.ko);
+
+function floater(x, y, text, color) { S.floaters.push({ x, y, text, color, t0: S.t, life: 1 }); }
+
+function hurtEnemy(d, who) {
+  const e = S.enemy;
+  e.hp = Math.max(0, e.hp - d);
+  e.hitT = S.t;
+  floater(200 + rnd(-24, 24), 84 + rnd(-8, 8), String(d), '#ffe9b0');
+  if (!e.enraged && e.hp <= e.max * 0.4 && e.hp > 0) {
+    e.enraged = true;
+    say('The furnace roars. The Warden moves faster.', true);
+  }
+  if (e.hp <= 0) endGame('win');
+}
+
+function hurtHero(h, d) {
+  if (h.ko) return;
+  if (h.guardUntil > S.t) d = Math.round(d * 0.4);
+  h.hp = Math.max(0, h.hp - d);
+  h.hitT = S.t;
+  S.shake = Math.max(S.shake, d > 30 ? 3 : 1.5);
+  floater(h.x, 196, String(d), '#ff8a78');
+  if (h.hp <= 0) {
+    h.ko = true; h.ready = false; h.gauge = 0; h.queued = null;
+    if (!living().length) endGame('lose');
+  }
+}
+
+function endGame(kind) {
+  S.over = kind; S.overT = S.t;
+  const win = kind === 'win';
+  document.getElementById('overTitle').textContent = win ? 'The Warden falls' : 'The party has fallen';
+  document.getElementById('overSub').textContent = win ? 'The furnace goes dark.' : 'The Kiln Warden stands over the tunnel.';
+  setTimeout(() => { if (S.over === kind) document.getElementById('over').hidden = false; }, win ? 1800 : 900);
+}
+
+function healTarget(targetId) {
+  const t = targetId && heroById(targetId);
+  if (t && !t.ko) return t;
+  return living().sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp)[0];
+}
+
+/* returns true when the action was spent */
+function perform(h, skill, targetId) {
+  const sk = SKILLS[skill];
+  if (h.mp < sk.cost) { say(`${h.name} lacks the Mind for ${sk.label}.`, true); return false; }
+  let anim = 'melee', refund = 0;
+  switch (skill) {
+    case 'attack': hurtEnemy(rnd(h.atk[0], h.atk[1])); break;
+    case 'quick':  hurtEnemy(rnd(8, 12)); refund = 0.5; break;
+    case 'bash':
+      hurtEnemy(rnd(28, 38));
+      if (S.enemy.wind) S.enemy.wind.t = Math.max(0, S.enemy.wind.t - 0.7); else S.enemy.gauge = Math.max(0, S.enemy.gauge - 0.3);
+      break;
+    case 'flurry':
+      for (let i = 0; i < 3; i++) S.timers.push({ at: S.t + 0.18 * i, fn: () => { if (!S.over) hurtEnemy(rnd(8, 11)); } });
+      break;
+    case 'bolt': anim = 'cast'; hurtEnemy(rnd(34, 44)); break;
+    case 'block': anim = 'cast'; h.guardUntil = S.t + 6; floater(h.x, 180, 'Guard', '#79c0de'); break;
+    case 'taunt': anim = 'cast'; S.enemy.taunt = { id: h.id, n: 2 }; floater(h.x, 180, 'Taunt', '#f0b45c'); break;
+    case 'heal': {
+      anim = 'cast';
+      const t = healTarget(targetId);
+      if (!t) return false;
+      const amt = rnd(40, 50), before = t.hp;
+      t.hp = Math.min(t.maxHp, t.hp + amt);
+      floater(t.x, 190, '+' + Math.round(t.hp - before), '#a6dc90');
+      t.hitT = -9;
+      break;
+    }
+    case 'revive': {
+      anim = 'cast';
+      const t = (targetId && heroById(targetId) && heroById(targetId).ko) ? heroById(targetId) : S.heroes.find(x => x.ko);
+      if (!t) { say('No one has fallen.', true); return false; }
+      t.ko = false; t.hp = Math.round(t.maxHp * 0.4); t.gauge = 0; t.ready = false;
+      floater(t.x, 190, 'Revived', '#a6dc90');
+      break;
+    }
+  }
+  h.mp -= sk.cost;
+  h.ready = false;
+  h.gauge = refund;
+  h.anim = { kind: anim, t0: S.t, skill };
+  return true;
+}
+
+function issue(h, skill, targetId) {
+  if (S.over) return false;
+  const sk = SKILLS[skill];
+  if (h.ko) { say(`${h.name} is down.`, true); return false; }
+  if (!h.skills.includes(skill)) { say(`${h.name} can’t ${sk.label.toLowerCase()}.`, true); return false; }
+  if (h.ready) {
+    const ok = perform(h, skill, targetId);
+    if (ok) say(`${h.name}: ${sk.label}${targetId && (skill === 'heal' || skill === 'revive') ? ' on ' + DEF(targetId).name : ''}`);
+    return ok;
+  }
+  h.queued = { skill, target: targetId };
+  say(`${h.name}: ${sk.label} queued until the gauge fills.`);
+  return true;
+}
+
+function runParsed(p) {
+  if (p.all) { living().forEach(h => issue(h, 'block')); return; }
+  issue(heroById(p.actor), p.action, p.target);
+  S.selected = p.actor;
+}
+
+/* ---------- enemy ---------- */
+function startWind() {
+  const e = S.enemy;
+  const sweep = e.enraged ? Math.random() < 0.55 : Math.random() < 0.3;
+  let target = null;
+  if (!sweep) {
+    const t = e.taunt.n > 0 && heroById(e.taunt.id);
+    const pool = living();
+    target = (t && !t.ko) ? t : pool[Math.floor(Math.random() * pool.length)];
+  }
+  e.wind = { kind: sweep ? 'sweep' : 'slam', dur: sweep ? 2.0 : 1.5, t: 0, target: target && target.id };
+}
+
+function resolveEnemy() {
+  const e = S.enemy, w = e.wind;
+  e.slamT = S.t;
+  e.lastKind = w.kind;
+  S.shake = 4;
+  if (w.kind === 'sweep') {
+    living().forEach(h => hurtHero(h, rnd(16, 22)));
+  } else {
+    let t = heroById(w.target);
+    if (!t || t.ko) t = living()[0];
+    if (t) hurtHero(t, rnd(38, 48));
+    if (e.taunt.n > 0) e.taunt.n--;
+  }
+  e.wind = null;
+  e.gauge = 0;
+}
+
+/* ---------- simulation ---------- */
+function update(dt) {
+  S.t += dt;
+  S.shake *= Math.pow(0.001, dt);
+  S.floaters = S.floaters.filter(f => S.t - f.t0 < 0.95);
+  S.timers = S.timers.filter(tm => { if (S.t >= tm.at) { tm.fn(); return false; } return true; });
+  updateParticles(dt);
+  if (S.over) return;
+
+  const anyReady = S.heroes.some(h => h.ready && !h.ko);
+  const waiting = S.wait && anyReady;
+
+  for (const h of S.heroes) {
+    if (h.ko) continue;
+    h.mp = Math.min(h.maxMp, h.mp + dt * 0.6);
+    if (!h.ready) {
+      h.gauge += dt * h.spd / GAUGE_SECONDS;
+      if (h.gauge >= 1) {
+        h.gauge = 1; h.ready = true; h.readyT = S.t;
+        if (!S.manual || !heroById(S.selected).ready) S.selected = h.id;
+      }
+    }
+    if (h.ready && h.queued) {
+      const q = h.queued; h.queued = null;
+      perform(h, q.skill, q.target);
+    }
+  }
+  if (S.over) return;
+
+  if (!waiting) {
+    const e = S.enemy;
+    if (e.wind) { e.wind.t += dt; if (e.wind.t >= e.wind.dur) resolveEnemy(); }
+    else {
+      e.gauge += dt / 6.5 * (e.enraged ? 1.4 : 1);
+      if (e.gauge >= 1) startWind();
+    }
+  }
+}
+
+function updateParticles(dt) {
+  const e = S.enemy;
+  if (!S.over || S.over === 'lose') {
+    if (Math.random() < dt * 8) S.parts.push({ k: 'ember', x: 200 + rnd(-16, 16), y: 140 + rnd(-10, 10), vx: rnd(-8, 8), vy: -rnd(12, 30), t0: S.t, life: 1.4 });
+    if (Math.random() < dt * 3) S.parts.push({ k: 'smoke', x: 200 + rnd(-3, 3), y: 42, vx: rnd(-4, 8), vy: -rnd(8, 14), t0: S.t, life: 2.6 });
+  }
+  S.parts = S.parts.filter(p => S.t - p.t0 < p.life);
+  for (const p of S.parts) { p.x += p.vx * dt; p.y += p.vy * dt; }
+}
+
+/* ---------- art ---------- */
+function hash(i, j) {
+  let h = (Math.imul(i, 374761393) + Math.imul(j, 668265263)) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967295;
+}
+const bg = document.createElement('canvas');
+bg.width = W; bg.height = H;
+(function buildBg() {
+  const g = bg.getContext('2d');
+  const cx = 200, cy = 118;
+  const hw = i => 196 - 30 * i, hh = i => 122 - 23 * i, bot = i => 206 - 9 * i;
+  const arch = i => {
+    g.beginPath(); g.moveTo(cx - hw(i), bot(i)); g.lineTo(cx - hw(i), cy);
+    g.ellipse(cx, cy, hw(i), hh(i), 0, Math.PI, 0); g.lineTo(cx + hw(i), bot(i)); g.closePath();
+  };
+  const bricks = (shade, seed) => {
+    const bh = 9, bw = 20;
+    for (let r = 0; r * bh < H; r++) {
+      const off = (r % 2) * bw / 2;
+      for (let k = -1; k * bw < W + bw; k++) {
+        const v = hash(k + seed, r + seed);
+        g.fillStyle = `hsl(${16 + v * 12},${24 + v * 10}%,${(30 + v * 14) * shade}%)`;
+        g.fillRect(k * bw + off + 1, r * bh + 1, bw - 1, bh - 1);
+      }
+    }
+  };
+  g.fillStyle = '#0b0708'; g.fillRect(0, 0, W, H);
+  bricks(1, 0);
+  for (let i = 0; i < 5; i++) {
+    g.save(); arch(i); g.clip();
+    g.fillStyle = '#0b0708'; g.fillRect(0, 0, W, H);
+    bricks(0.88 - 0.14 * i, 11 * (i + 1));
+    g.restore();
+    arch(i); g.lineWidth = 2; g.strokeStyle = 'rgba(0,0,0,.55)'; g.stroke();
+  }
+  arch(5);
+  const vg = g.createRadialGradient(cx, 150, 4, cx, 150, 60);
+  vg.addColorStop(0, '#1a0e0a'); vg.addColorStop(1, '#050303');
+  g.fillStyle = vg; g.fill();
+
+  const bands = [[0, bot(0), W, H - bot(0), -1]];
+  for (let i = 0; i < 6; i++) bands.push([cx - hw(i), bot(i + 1), hw(i) * 2, bot(i) - bot(i + 1), i]);
+  g.save();
+  g.beginPath(); bands.forEach(b => g.rect(b[0], b[1], b[2], b[3])); g.clip();
+  bands.forEach(b => { g.fillStyle = `hsl(12,13%,${27 - (b[4] + 1) * 2.6}%)`; g.fillRect(b[0], b[1], b[2], b[3]); });
+  g.strokeStyle = 'rgba(0,0,0,.45)'; g.lineWidth = 1;
+  for (let i = 0; i <= 6; i++) { g.beginPath(); g.moveTo(0, bot(i) + .5); g.lineTo(W, bot(i) + .5); g.stroke(); }
+  for (let k = -9; k <= 9; k++) { g.beginPath(); g.moveTo(cx + k * 6, 152); g.lineTo(cx + k * 62, H); g.stroke(); }
+  const gr = g.createLinearGradient(0, 200, 0, H);
+  gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(1, 'rgba(0,0,0,.45)');
+  g.fillStyle = gr; g.fillRect(0, 200, W, 40);
+  g.restore();
+})();
+
+function drawEnemy() {
+  const e = S.enemy, t = S.t, ox = 200, oy = 210;
+  let alpha = 1, drop = 0;
+  if (S.over === 'win') { const k = Math.min(1, (t - S.overT) / 1.8); alpha = 1 - k * 0.92; drop = k * 20; }
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = 'rgba(0,0,0,.45)'; ctx.beginPath(); ctx.ellipse(ox, oy + 3, 66, 8, 0, 0, 7); ctx.fill();
+  const br = Math.sin(t * 1.6) * 1.2;
+  const sx = (t - e.hitT < 0.25) ? Math.sin((t - e.hitT) * 80) * 2.2 : 0;
+  ctx.translate(sx, drop);
+  if (t - e.hitT < 0.12) ctx.filter = 'brightness(1.8)';
+
+  const wind = e.wind;
+  let ang = 0.12 + Math.sin(t * 1.6) * 0.03, heat = 0.55 + Math.sin(t * 5) * 0.08, mirror = false;
+  if (wind) {
+    const p = Math.min(1, wind.t / wind.dur), k = 1 - Math.pow(1 - p, 2);
+    ang = 0.12 + (-2.4 - 0.12) * k + Math.sin(t * 40) * 0.02 * p;
+    heat = 0.7 + 0.3 * p; mirror = wind.kind === 'sweep';
+  } else if (t - e.slamT < 0.7) {
+    const q = (t - e.slamT) / 0.7;
+    ang = q < 0.3 ? -2.4 + 3.1 * (q / 0.3) : 0.7 - 0.58 * ((q - 0.3) / 0.7);
+    heat = 1 - 0.45 * q; mirror = e.lastKind === 'sweep';
+  }
+  const angL = mirror ? -ang : -0.12 - Math.sin(t * 1.6) * 0.03;
+
+  const R = (x, y, w, h, c) => { ctx.fillStyle = c; ctx.fillRect(Math.round(x), Math.round(y), w, h); };
+  // legs, feet, hips
+  R(ox - 40, oy - 50, 30, 50, '#5a3a2d'); R(ox + 10, oy - 50, 30, 50, '#5a3a2d');
+  R(ox - 40, oy - 50, 6, 50, '#6c4939'); R(ox + 10, oy - 50, 6, 50, '#6c4939');
+  R(ox - 42, oy - 28, 34, 6, '#352e33'); R(ox + 8, oy - 28, 34, 6, '#352e33');
+  R(ox - 44, oy - 9, 38, 9, '#2e2428'); R(ox + 6, oy - 9, 38, 9, '#2e2428');
+  R(ox - 46, oy - 64 + br, 92, 16, '#3b3438'); R(ox - 46, oy - 64 + br, 92, 3, '#544a52');
+  // torso
+  ctx.fillStyle = '#6a4636';
+  ctx.beginPath(); ctx.moveTo(ox - 36, oy - 62 + br); ctx.lineTo(ox + 36, oy - 62 + br); ctx.lineTo(ox + 58, oy - 114 + br); ctx.lineTo(ox - 58, oy - 114 + br); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = 'rgba(0,0,0,.22)';
+  ctx.beginPath(); ctx.moveTo(ox + 8, oy - 62 + br); ctx.lineTo(ox + 36, oy - 62 + br); ctx.lineTo(ox + 58, oy - 114 + br); ctx.lineTo(ox + 22, oy - 114 + br); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = 'rgba(20,8,6,.6)'; ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.moveTo(ox - 46, oy - 100 + br); ctx.lineTo(ox - 38, oy - 88 + br); ctx.lineTo(ox - 44, oy - 78 + br);
+  ctx.moveTo(ox + 36, oy - 108 + br); ctx.lineTo(ox + 42, oy - 92 + br); ctx.stroke();
+  // furnace door
+  R(ox - 25, oy - 108 + br, 50, 44, '#251a1c');
+  const fg = ctx.createLinearGradient(0, oy - 104, 0, oy - 70);
+  fg.addColorStop(0, `rgb(255,${Math.round(150 + 80 * heat)},70)`); fg.addColorStop(1, '#b8330f');
+  const keep = ctx.globalAlpha;
+  ctx.globalAlpha = keep * (0.55 + 0.45 * heat); ctx.fillStyle = fg; ctx.fillRect(ox - 21, oy - 104 + br, 42, 36);
+  ctx.fillStyle = '#ffd37a';
+  for (let k = 0; k < 4; k++) {
+    const fx = ox - 16 + k * 10, fh = 10 + Math.sin(t * 7 + k * 2) * 5 + heat * 8;
+    ctx.beginPath(); ctx.moveTo(fx - 4, oy - 68 + br); ctx.lineTo(fx, oy - 68 - fh + br); ctx.lineTo(fx + 4, oy - 68 + br); ctx.closePath(); ctx.fill();
+  }
+  ctx.globalAlpha = keep;
+  for (let k = 0; k < 5; k++) R(ox - 21 + k * 9, oy - 104 + br, 3, 36, '#1b1214');
+  // head and chimney
+  R(ox - 16, oy - 146 + br, 32, 28, '#5b3b2e'); R(ox - 16, oy - 146 + br, 5, 28, '#6c4939');
+  R(ox - 13, oy - 136 + br, 26, 6, '#0c0605');
+  const eye = wind ? '#ffd37a' : '#f08a3c';
+  R(ox - 9, oy - 135 + br, 6, 3, eye); R(ox + 3, oy - 135 + br, 6, 3, eye);
+  R(ox - 8, oy - 170 + br, 16, 26, '#7a4a38'); R(ox - 10, oy - 172 + br, 20, 5, '#352e33');
+  for (let r = 0; r < 3; r++) R(ox - 8, oy - 162 + r * 8 + br, 16, 1, 'rgba(0,0,0,.35)');
+  // shoulders
+  for (const s of [-1, 1]) {
+    ctx.fillStyle = '#3b3438'; ctx.beginPath(); ctx.arc(ox + s * 58, oy - 110 + br, 20, 0, 7); ctx.fill();
+    ctx.strokeStyle = '#5c525b'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(ox + s * 58, oy - 110 + br, 20, Math.PI * 1.1, Math.PI * 1.7); ctx.stroke();
+  }
+  // arms
+  const arm = (px, py, th, hold) => {
+    ctx.save(); ctx.translate(px, py); ctx.rotate(th);
+    R(-10, -2, 20, 56, '#5a3a2d'); R(-10, -2, 4, 56, '#6c4939'); R(-11, 24, 22, 5, '#352e33');
+    R(-13, 52, 26, 22, '#3b3438');
+    if (hold) {
+      R(-3, 70, 6, 40, '#2a2125');
+      R(-19, 104, 38, 24, '#3b3438'); R(-19, 104, 38, 4, '#544a52');
+      R(-19, 124, 38, 4, `rgba(255,140,50,${0.3 + 0.6 * heat})`);
+    }
+    ctx.restore();
+  };
+  arm(ox - 58, oy - 108 + br, angL, false);
+  arm(ox + 58, oy - 108 + br, ang, true);
+  ctx.restore();
+}
+
+function drawHero(h) {
+  const t = S.t;
+  let dx = 0, dy = 0;
+  const a = h.anim;
+  let ap = -1;
+  if (a) {
+    ap = (t - a.t0) / 0.5;
+    if (ap >= 0 && ap < 1) {
+      const k = Math.sin(ap * Math.PI);
+      if (a.kind === 'melee') { dy = -34 * k; dx = (200 - h.x) * 0.1 * k; } else dy = -5 * k;
+    }
+  }
+  if (t - h.hitT < 0.3) dx += Math.sin((t - h.hitT) * 60) * 2.5;
+
+  // lightning from Kevin to the Warden
+  if (a && a.skill === 'bolt' && ap >= 0 && ap < 0.45) {
+    ctx.strokeStyle = '#fff3b0'; ctx.lineWidth = 2; ctx.beginPath();
+    let px = h.x, py = 186;
+    ctx.moveTo(px, py);
+    for (let i = 1; i <= 6; i++) { px += (200 - h.x) / 6 + (Math.random() - .5) * 10; py += (120 - 186) / 6 + (Math.random() - .5) * 10; ctx.lineTo(px, py); }
+    ctx.stroke();
+  }
+
+  ctx.save();
+  ctx.translate(Math.round(h.x + dx), Math.round(232 + dy));
+  if (h.ko) { ctx.translate(0, -7); ctx.rotate(-Math.PI / 2); ctx.globalAlpha = 0.5; }
+  else if (t - h.hitT < 0.25 && Math.floor(t * 30) % 2) ctx.globalAlpha = 0.5;
+  const R = (x, y, w, hh, c) => { ctx.fillStyle = c; ctx.fillRect(x, y, w, hh); };
+  const C = (x, y, r, c) => { ctx.fillStyle = c; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill(); };
+
+  if (h.id === 'kevin') {
+    R(-6, -12, 5, 12, '#2f2a33'); R(1, -12, 5, 12, '#2f2a33');
+    ctx.fillStyle = '#4f8a62'; ctx.beginPath(); ctx.moveTo(-10, -30); ctx.lineTo(10, -30); ctx.lineTo(13, -5); ctx.lineTo(-13, -5); ctx.closePath(); ctx.fill();
+    R(-10, -19, 20, 2, '#c9a35a'); R(-14, -30, 4, 13, '#4f8a62'); R(10, -30, 4, 13, '#4f8a62');
+    C(0, -36, 8, '#3f7352'); R(-3, -46, 6, 5, '#3f7352');
+    R(15, -46, 2, 46, '#6b4a2e');
+    const glow = 0.7 + 0.3 * Math.sin(t * 4);
+    C(16, -49, 4, `rgba(159,231,176,${glow})`);
+  } else if (h.id === 'matthew') {
+    R(-7, -12, 6, 12, '#3a3f4a'); R(1, -12, 6, 12, '#3a3f4a');
+    R(-11, -31, 22, 18, '#8d99ab'); R(-4, -31, 8, 22, '#3f5b8f');
+    R(-15, -30, 4, 13, '#8d99ab'); R(11, -30, 4, 13, '#8d99ab');
+    C(0, -21, 10, '#3f5b8f'); ctx.strokeStyle = '#c3ccd9'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0, -21, 10, 0, 7); ctx.stroke(); C(0, -21, 2.5, '#c3ccd9');
+    C(0, -37, 7.5, '#a9b4c4'); R(-1.5, -49, 3, 7, '#b5342b');
+    R(16, -42, 3, 30, '#d7dde6'); R(13, -13, 9, 2, '#c9a35a');
+  } else {
+    R(-6, -12, 5, 12, '#3a2a2c'); R(1, -12, 5, 12, '#3a2a2c');
+    R(-9, -30, 18, 16, '#6b2f33'); R(-13, -29, 4, 13, '#6b2f33'); R(9, -29, 4, 13, '#6b2f33');
+    ctx.strokeStyle = '#cfd5dd'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(-9, -15); ctx.lineTo(9, -33); ctx.moveTo(9, -15); ctx.lineTo(-9, -33); ctx.stroke();
+    C(-9, -15, 1.8, '#c9a35a'); C(9, -15, 1.8, '#c9a35a');
+    R(-8, -33, 16, 4, '#e0803a'); R(5, -31, 4, 12, '#e0803a');
+    C(0, -38, 7, '#3a2326');
+  }
+  if (!h.ko && h.guardUntil > t) {
+    const pulse = 0.5 + 0.25 * Math.sin(t * 6);
+    ctx.fillStyle = 'rgba(121,192,222,.12)'; ctx.strokeStyle = `rgba(121,192,222,${pulse})`; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.ellipse(0, -24, 20, 28, 0, 0, 7); ctx.fill(); ctx.stroke();
+  }
+  if (a && a.kind === 'cast' && ap >= 0 && ap < 1) {
+    const col = { heal: '166,220,144', revive: '166,220,144', bolt: '255,243,176', block: '121,192,222', taunt: '240,180,92' }[a.skill] || '255,240,200';
+    ctx.strokeStyle = `rgba(${col},${0.8 * (1 - ap)})`; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(0, -22, 12 + ap * 16, 0, 7); ctx.stroke();
+  }
+  ctx.restore();
+
+  // name tag, gauge, ready marker
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 9px "Alegreya Sans", sans-serif';
+  const label = h.name.toUpperCase();
+  ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,.85)'; ctx.strokeText(label, h.x, 180);
+  ctx.fillStyle = h.ko ? '#8a7b74' : '#f3e7d2'; ctx.fillText(label, h.x, 180);
+  if (!h.ko) {
+    ctx.fillStyle = 'rgba(0,0,0,.7)'; ctx.fillRect(h.x - 16, 235, 32, 4);
+    ctx.fillStyle = h.ready ? '#f08a3c' : '#79c0de'; ctx.fillRect(h.x - 15, 236, 30 * h.gauge, 2);
+    if (h.ready) {
+      const bob = Math.sin(t * 7) * 1.5;
+      ctx.fillStyle = '#f08a3c'; ctx.beginPath(); ctx.moveTo(h.x - 4, 168 + bob); ctx.lineTo(h.x + 4, 168 + bob); ctx.lineTo(h.x, 174 + bob); ctx.closePath(); ctx.fill();
+    }
+  }
+}
+
+function drawFx() {
+  const t = S.t;
+  for (const p of S.parts) {
+    const age = (t - p.t0) / p.life;
+    if (p.k === 'ember') { ctx.fillStyle = `rgba(255,${Math.round(190 - 90 * age)},60,${1 - age})`; ctx.fillRect(Math.round(p.x), Math.round(p.y), 2, 2); }
+    else { ctx.fillStyle = `rgba(150,140,140,${0.28 * (1 - age)})`; ctx.beginPath(); ctx.arc(p.x, p.y, 4 + age * 9, 0, 7); ctx.fill(); }
+  }
+  ctx.textAlign = 'center'; ctx.font = 'bold 13px "Alegreya Sans", sans-serif';
+  for (const f of S.floaters) {
+    const p = (t - f.t0) / 0.95;
+    ctx.globalAlpha = Math.max(0, 1 - p * p);
+    ctx.lineWidth = 3; ctx.strokeStyle = '#000'; ctx.strokeText(f.text, f.x, f.y - p * 22);
+    ctx.fillStyle = f.color; ctx.fillText(f.text, f.x, f.y - p * 22);
+  }
+  ctx.globalAlpha = 1;
+}
+
+function render() {
+  const sh = S.shake;
+  ctx.save();
+  ctx.filter = 'none';
+  ctx.translate(Math.round((Math.random() - .5) * sh), Math.round((Math.random() - .5) * sh));
+  ctx.drawImage(bg, 0, 0);
+  drawEnemy();
+  S.heroes.forEach(drawHero);
+  drawFx();
+  ctx.globalCompositeOperation = 'lighter';
+  const fl = 0.11 + 0.03 * Math.sin(S.t * 9) + (S.enemy.wind ? 0.06 : 0);
+  const gg = ctx.createRadialGradient(200, 150, 10, 200, 150, 170);
+  gg.addColorStop(0, `rgba(240,120,40,${fl})`); gg.addColorStop(1, 'rgba(240,120,40,0)');
+  ctx.fillStyle = gg; ctx.fillRect(0, 0, W, H);
+  ctx.globalCompositeOperation = 'source-over';
+  const vg = ctx.createRadialGradient(200, 125, 90, 200, 125, 290);
+  vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,.6)');
+  ctx.fillStyle = vg; ctx.fillRect(-4, -4, W + 8, H + 8);
+  ctx.restore();
+}
+
+/* ---------- HUD ---------- */
+const $ = id => document.getElementById(id);
+const members = {};
+let cmdFor = null, cmdRows = {};
+
+function buildParty() {
+  const root = $('party');
+  root.innerHTML = '';
+  DEFS.forEach(d => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'member';
+    b.innerHTML = `<span class="nm">${d.name}<small>${d.role}</small></span>
+      <span class="stat body"><label>Body</label><span class="bar"><i></i></span><b></b></span>
+      <span class="stat mind"><label>Mind</label><span class="bar"><i></i></span><b></b></span>
+      <span class="atb"><i></i></span>`;
+    b.addEventListener('click', () => { S.selected = d.id; S.manual = true; });
+    root.appendChild(b);
+    members[d.id] = {
+      el: b, bodyI: b.querySelector('.body i'), bodyB: b.querySelector('.body b'),
+      mindI: b.querySelector('.mind i'), mindB: b.querySelector('.mind b'), atbI: b.querySelector('.atb i')
+    };
+  });
+}
+
+function buildCmds(id) {
+  const d = DEF(id);
+  cmdFor = id; cmdRows = {};
+  $('cmdWho').textContent = d.name;
+  const box = $('cmds');
+  box.innerHTML = '';
+  d.skills.forEach(s => {
+    const sk = SKILLS[s];
+    const r = document.createElement('button');
+    r.type = 'button'; r.className = 'cmd-row';
+    r.innerHTML = `<b>${sk.label}</b><span class="cost">${sk.cost ? sk.cost + ' Mind' : ''}</span><small>“${d.name}, ${sk.label.toLowerCase()}” · ${sk.desc}</small>`;
+    r.addEventListener('click', () => issue(heroById(id), s));
+    box.appendChild(r);
+    cmdRows[s] = r;
+  });
+}
+
+let lastBanner = '';
+function hud() {
+  const e = S.enemy;
+  $('foeHp').style.width = (e.hp / e.max * 100) + '%';
+  const b = $('banner');
+  if (e.wind && !S.over) {
+    const nm = e.wind.kind === 'sweep' ? 'Cinder Sweep' : 'Slag Maul' + (e.wind.target ? ' → ' + DEF(e.wind.target).name : '');
+    if (nm !== lastBanner) { $('bannerText').textContent = nm; lastBanner = nm; }
+    b.classList.add('on');
+    $('windBar').style.width = Math.min(100, e.wind.t / e.wind.dur * 100) + '%';
+  } else { b.classList.remove('on'); lastBanner = ''; }
+
+  for (const h of S.heroes) {
+    const m = members[h.id];
+    m.bodyI.style.width = (h.hp / h.maxHp * 100) + '%';
+    m.bodyB.textContent = Math.round(h.hp);
+    m.mindI.style.width = (h.mp / h.maxMp * 100) + '%';
+    m.mindB.textContent = Math.floor(h.mp);
+    m.atbI.style.width = (h.ko ? 0 : h.gauge * 100) + '%';
+    m.el.classList.toggle('ready', h.ready && !h.ko);
+    m.el.classList.toggle('sel', S.selected === h.id);
+    m.el.classList.toggle('down', h.ko);
+  }
+  if (cmdFor !== S.selected) buildCmds(S.selected);
+  const h = heroById(S.selected);
+  const st = $('cmdState');
+  st.textContent = h.ko ? 'Down' : h.ready ? 'Ready' : 'Charging';
+  st.className = h.ready && !h.ko ? '' : 'wait';
+  for (const s in cmdRows) {
+    cmdRows[s].classList.toggle('no', h.ko || h.mp < SKILLS[s].cost);
+    cmdRows[s].classList.toggle('queued', !!(h.queued && h.queued.skill === s));
+  }
+}
+
+function say(text, bad) {
+  const r = $('result');
+  r.textContent = '→ ' + text;
+  r.classList.toggle('bad', !!bad);
+}
+
+/* ---------- speech ---------- */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null, wantListen = false, blockedMsg = '';
+const handled = new Set(), pend = {};
+const MIC_OFF = 'Mic off. You can also type or tap commands.';
+
+function setMic(on, msg) {
+  $('mic').setAttribute('aria-pressed', String(on));
+  $('micLabel').textContent = on ? 'Stop listening' : 'Start listening';
+  $('micStatus').textContent = msg;
+}
+
+function startMic() {
+  if (!SR) { setMic(false, 'This browser has no speech recognition. Try Chrome or Safari, or type commands.'); return; }
+  blockedMsg = '';
+  wantListen = true;
+  rec = new SR();
+  rec.lang = 'en-US'; rec.continuous = true; rec.interimResults = true; rec.maxAlternatives = 3;
+  rec.onstart = () => setMic(true, 'Listening. Try “Matthew, block”.');
+  rec.onresult = ev => {
+    for (let i = ev.resultIndex; i < ev.results.length; i++) {
+      const res = ev.results[i], alts = [];
+      for (let k = 0; k < res.length; k++) alts.push(res[k].transcript);
+      $('heard').textContent = 'Heard “' + alts[0].trim() + '”';
+      if (handled.has(i)) continue;
+      clearTimeout(pend[i]);
+      const p = alts.map(parseCommand).find(x => x.ok);
+      if (p && res.isFinal) { handled.add(i); runParsed(p); }
+      else if (p) pend[i] = setTimeout(() => { if (!handled.has(i)) { handled.add(i); runParsed(p); } }, 450);
+      else if (res.isFinal) { handled.add(i); say(parseCommand(alts[0]).reason, true); }
+    }
+  };
+  rec.onerror = ev => {
+    if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') {
+      wantListen = false;
+      blockedMsg = 'The microphone is blocked here. Open the game in its own browser tab and allow the mic, or type commands.';
+    } else if (ev.error === 'audio-capture') {
+      wantListen = false;
+      blockedMsg = 'No microphone found. Plug one in, or type commands.';
+    }
+  };
+  rec.onend = () => {
+    handled.clear();
+    if (wantListen) setTimeout(() => { try { rec.start(); } catch (_) {} }, 250);
+    else setMic(false, blockedMsg || MIC_OFF);
+  };
+  try { rec.start(); } catch (_) { setMic(false, MIC_OFF); }
+}
+
+$('mic').addEventListener('click', () => {
+  if (wantListen) { wantListen = false; try { rec.stop(); } catch (_) {} setMic(false, MIC_OFF); }
+  else startMic();
+});
+
+$('typed').addEventListener('submit', ev => {
+  ev.preventDefault();
+  const inp = $('typedCmd'), text = inp.value.trim();
+  if (!text) return;
+  $('heard').textContent = 'Typed “' + text + '”';
+  const p = parseCommand(text);
+  if (p.ok) runParsed(p); else say(p.reason, true);
+  inp.value = '';
+});
+
+$('wait').addEventListener('change', ev => { S.wait = ev.target.checked; });
+$('again').addEventListener('click', () => { newGame(); buildCmds(S.selected); });
+
+/* ---------- boot ---------- */
+newGame();
+buildParty();
+buildCmds(S.selected);
+window.__vb = { parseCommand, issue, runParsed, update, get S() { return S; } };
+
+let last = performance.now();
+function loop(now) {
+  const dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
+  update(dt); render(); hud();
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+})();
+</script>
